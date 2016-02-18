@@ -75,6 +75,14 @@ public class CachedConnection {
         return stmt;
     }
 
+    public void setAutoCommit(boolean autoCommit) throws SQLException {
+        conn.setAutoCommit(autoCommit);
+    }
+
+    public void commit() throws SQLException {
+        conn.commit();
+    }
+
     public void close() throws SQLException {
         conn.close();
     }

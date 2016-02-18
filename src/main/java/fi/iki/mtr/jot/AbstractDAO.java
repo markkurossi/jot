@@ -56,11 +56,32 @@ public abstract class AbstractDAO {
     protected class Executor<T> {
         private Class<?> cls;
 
+        /**
+         * An optional connection instance to be used for operations.
+         * If this is unset, each operation will allocate and release
+         * its own connection.
+         */
+        protected CachedConnection persistentConnection;
+
         /** The auto-generated key for the latest insert operation. */
         public int generatedKey;
 
         public Executor(Class<?> cls) {
             this.cls = cls;
+        }
+
+        private CachedConnection getConnection() throws SQLException {
+            if (persistentConnection != null) {
+                return persistentConnection;
+            }
+            return connectionManager.getConnection();
+        }
+
+        private void recycleConnection(CachedConnection conn) {
+            if (conn == null || persistentConnection != null) {
+                return;
+            }
+            connectionManager.recycle(conn);
         }
 
         public List<T> select(String query, Object[] params)
@@ -69,7 +90,7 @@ public abstract class AbstractDAO {
             CachedConnection conn = null;
             ResultSet rs = null;
             try {
-                conn = connectionManager.getConnection();
+                conn = getConnection();
                 PreparedStatement stmt = conn.prepareStatement(query);
 
                 if (params != null) {
@@ -100,9 +121,7 @@ public abstract class AbstractDAO {
                         rs.close();
                     } catch (SQLException e) {}
                 }
-                if (conn != null) {
-                    connectionManager.recycle(conn);
-                }
+                recycleConnection(conn);
             }
         }
 
@@ -110,7 +129,7 @@ public abstract class AbstractDAO {
             CachedConnection conn = null;
             ResultSet keys = null;
             try {
-                conn = connectionManager.getConnection();
+                conn = getConnection();
                 PreparedStatement stmt
                     = conn.prepareStatement(Mapper.toInsertSql(cls),
                                             Statement.RETURN_GENERATED_KEYS);
@@ -141,9 +160,7 @@ public abstract class AbstractDAO {
                         keys.close();
                     } catch (SQLException e) {}
                 }
-                if (conn != null) {
-                    connectionManager.recycle(conn);
-                }
+                recycleConnection(conn);
             }
         }
 
@@ -151,7 +168,7 @@ public abstract class AbstractDAO {
             CachedConnection conn = null;
 
             try {
-                conn = connectionManager.getConnection();
+                conn = getConnection();
                 String sql = Mapper.toInsertSql(cls);
                 System.err.println("SQL: " + sql);
                 PreparedStatement stmt
@@ -176,13 +193,34 @@ public abstract class AbstractDAO {
                 log.error("Mapper error", e);
                 throw new IOException("Mapper error", e);
             } finally {
-                if (conn != null) {
-                    connectionManager.recycle(conn);
-                }
+                recycleConnection(conn);
             }
         }
 
         public void update(T obj) throws IOException {
+            try {
+                int count = executeUpdate(Mapper.toUpdateSql(cls),
+                                          Mapper.toSqlParams(obj, true));
+                if (count != 1) {
+                    throw new IOException("Unexpected update count: " + count);
+                }
+            } catch (MapperException e) {
+                log.error("Mapper error", e);
+                throw new IOException("Mapper error", e);
+            }
+        }
+
+        public void delete(T obj) throws IOException {
+            try {
+                int count = executeUpdate(Mapper.toDeleteSql(cls),
+                                          Mapper.toIdParams(obj));
+                if (count != 1) {
+                    throw new IOException("Unexpected delete count: " + count);
+                }
+            } catch (MapperException e) {
+                log.error("Mapper error", e);
+                throw new IOException("Mapper error", e);
+            }
         }
 
         public int executeUpdate(String query, Object[] params)
@@ -191,7 +229,7 @@ public abstract class AbstractDAO {
             CachedConnection conn = null;
 
             try {
-                conn = connectionManager.getConnection();
+                conn = getConnection();
                 PreparedStatement stmt = conn.prepareStatement(query);
 
                 for (int i = 0; i < params.length; i++) {
@@ -203,9 +241,55 @@ public abstract class AbstractDAO {
                 log.error("SQL error", e);
                 throw new IOException("SQL error", e);
             } finally {
-                if (conn != null) {
-                    connectionManager.recycle(conn);
-                }
+                recycleConnection(conn);
+            }
+        }
+
+    }
+
+    protected class TransactionExecutor<T> extends Executor<T> {
+
+        public TransactionExecutor(Class<?> cls) throws IOException {
+            super(cls);
+
+            try {
+                persistentConnection = connectionManager.getConnection();
+                persistentConnection.setAutoCommit(false);
+            } catch (SQLException e) {
+                log.error("SQL error", e);
+                throw new IOException("SQL error", e);
+            }
+        }
+
+        public void commit() throws IOException {
+            try {
+                persistentConnection.commit();
+            } catch (SQLException e) {
+                log.error("SQL error", e);
+                throw new IOException("SQL error", e);
+            }
+        }
+
+        public synchronized void close() {
+            if (persistentConnection == null) {
+                return;
+            }
+            try {
+                persistentConnection.setAutoCommit(true);
+            } catch (SQLException e) {
+                log.error("SQL error", e);
+            } finally {
+                connectionManager.recycle(persistentConnection);
+                persistentConnection = null;
+            }
+        }
+
+        @Override
+        protected void finalize() throws Throwable {
+            try {
+                close();
+            } finally {
+                super.finalize();
             }
         }
     }

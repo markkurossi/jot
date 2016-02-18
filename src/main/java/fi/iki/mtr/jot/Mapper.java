@@ -61,7 +61,7 @@ public class Mapper {
     private static Logger log = LoggerFactory.getLogger(Mapper.class);
 
     private enum Type {
-        INT, INTEGER, STRING, BOOLEAN, DATE;
+        INT, INTEGER, CHAR, CHARACTER, STRING, BOOLEAN, DATE;
     }
 
     /** Information about class fields. */
@@ -130,6 +130,10 @@ public class Mapper {
                 type = Type.INT;
             } else if (cls == Integer.class) {
                 type = Type.INTEGER;
+            } else if (cls == char.class) {
+                type = Type.CHAR;
+            } else if (cls == Character.class) {
+                type = Type.CHARACTER;
             } else if (cls == String.class) {
                 type = Type.STRING;
             } else if (cls == boolean.class) {
@@ -259,6 +263,15 @@ public class Mapper {
                     fi.field.set(object, Integer.valueOf(json.getInt(name)));
                     break;
 
+                case CHAR:
+                    fi.field.setChar(object, (char) json.getInt(name));
+                    break;
+
+                case CHARACTER:
+                    fi.field.set(object,
+                                 Character.valueOf((char) json.getInt(name)));
+                    break;
+
                 case STRING:
                     fi.field.set(object, json.getString(name));
                     break;
@@ -320,6 +333,15 @@ public class Mapper {
                     fi.field.set(object, Integer.valueOf(rs.getInt(i)));
                     break;
 
+                case CHAR:
+                    fi.field.setChar(object, (char) rs.getInt(i));
+                    break;
+
+                case CHARACTER:
+                    fi.field.set(object,
+                                 Character.valueOf((char) rs.getInt(i)));
+                    break;
+
                 case STRING:
                     fi.field.set(object, rs.getString(i));
                     break;
@@ -374,6 +396,16 @@ public class Mapper {
 
                 case INTEGER:
                     fi.field.setInt(object, Integer.valueOf(val));
+                    break;
+
+                case CHAR:
+                    fi.field.setChar(object, (char) Integer.parseInt(val));
+                    break;
+
+                case CHARACTER:
+                    fi.field.setChar(
+                    	object,
+                        Character.valueOf((char) Integer.parseInt(val)));
                     break;
 
                 case STRING:
@@ -447,7 +479,12 @@ public class Mapper {
                     json.put(field.jsonName, field.field.getInt(object));
                     break;
 
+                case CHAR:
+                    json.put(field.jsonName, (int) field.field.getChar(object));
+                    break;
+
                 case INTEGER:
+                case CHARACTER:
                 case STRING:
                     val = field.field.get(object);
                     if (val == null) {
@@ -519,26 +556,164 @@ public class Mapper {
     }
 
     /**
-     * Converts the object to SQL update statement parameters.
+     * Converts the object to SQL update statement.
+     *
+     * @param cls the class of the object to convert
+     * @return the SQL update statement of the object.
+     * @throws MapperException if the conversion fails.
+     */
+    public static String toUpdateSql(Class<?> cls) throws MapperException {
+        ClassInfo info = getClassInfo(cls);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("UPDATE ");
+        sb.append(info.dbTableName);
+        sb.append(" SET ");
+
+        int numColumns = 0;
+        FieldInfo idField = null;
+
+        for (FieldInfo field : info.fields) {
+            if (field.isId) {
+                idField = field;
+                if (field.idAutoAssign) {
+                    continue;
+                }
+            }
+            if (field.readOnly) {
+                continue;
+            }
+            if (numColumns > 0) {
+                sb.append(',');
+            }
+            sb.append(field.dbName);
+            sb.append("=?");
+            numColumns++;
+        }
+
+        if (idField == null) {
+            throw new MapperException("Can't update object " + cls
+                                      + " without an ID field");
+        }
+
+        sb.append(" WHERE ");
+        sb.append(idField.dbName);
+        sb.append("=?");
+
+        return sb.toString();
+    }
+
+    /**
+     * Converts the object to SQL delete statement.
+     *
+     * @param cls the class of the object to convert.
+     * @param the SQL update statement of the object.
+     * @throws MapperException if the conversion fails.
+     */
+    public static String toDeleteSql(Class<?> cls) throws MapperException {
+        ClassInfo info = getClassInfo(cls);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("DELETE FROM ");
+        sb.append(info.dbTableName);
+
+        FieldInfo idField = null;
+
+        for (FieldInfo field : info.fields) {
+            if (field.isId) {
+                idField = field;
+                break;
+            }
+        }
+
+        if (idField == null) {
+            throw new MapperException("Can't delete object " + cls
+                                      + " without an ID field");
+        }
+
+        sb.append(" WHERE ");
+        sb.append(idField.dbName);
+        sb.append("=?");
+
+        return sb.toString();
+    }
+
+    /**
+     * Converts the object to SQL insert and update statement
+     * parameters.
      *
      * @param object the object to convert
      * @return the SQL update statement parameters.
      * @throws MapperException if the conversion fails.
      */
     public static Object[] toSqlParams(Object object) throws MapperException {
+        return toSqlParams(object, false);
+    }
+
+    /**
+     * Converts the object to SQL insert and update statement
+     * parameters.
+     *
+     * @param object the object to convert
+     * @param appendId specifies if the object ID field is appended to
+     * the paramters array.
+     * @return the SQL update statement parameters.
+     * @throws MapperException if the conversion fails.
+     */
+    public static Object[] toSqlParams(Object object, boolean appendId)
+        throws MapperException {
         ClassInfo info = getClassInfo(object.getClass());
         ArrayList<Object> params = new ArrayList<>();
 
         try {
+            FieldInfo idField = null;
             for (FieldInfo field : info.fields) {
-                if (field.isId && field.idAutoAssign) {
-                    continue;
+                if (field.isId) {
+                    idField = field;
+                    if (field.idAutoAssign) {
+                        continue;
+                    }
                 }
                 if (field.readOnly) {
                     continue;
                 }
                 params.add(field.field.get(object));
             }
+            if (appendId) {
+                if (idField == null) {
+                    throw new MapperException("No ID field found for object "
+                                              + object.getClass());
+                }
+                params.add(idField.field.get(object));
+            }
+
+            return params.toArray(new Object[params.size()]);
+        } catch (IllegalAccessException e) {
+            throw new MapperException("Failed to convert object to SQL values",
+                                      e);
+        }
+    }
+
+    public static Object[] toIdParams(Object object)
+        throws MapperException {
+        ClassInfo info = getClassInfo(object.getClass());
+        ArrayList<Object> params = new ArrayList<>();
+
+        try {
+            FieldInfo idField = null;
+
+            for (FieldInfo field : info.fields) {
+                if (field.isId) {
+                    idField = field;
+                    break;
+                }
+            }
+
+            if (idField == null) {
+                throw new MapperException("No ID field found for object "
+                                          + object.getClass());
+            }
+            params.add(idField.field.get(object));
 
             return params.toArray(new Object[params.size()]);
         } catch (IllegalAccessException e) {
@@ -577,7 +752,12 @@ public class Mapper {
                     cb.append(field.field.getInt(object));
                     break;
 
+                case CHAR:
+                    cb.append((int) field.field.getChar(object));
+                    break;
+
                 case INTEGER:
+                case CHARACTER:
                 case STRING:
                     val = field.field.get(object);
                     if (val == null) {
