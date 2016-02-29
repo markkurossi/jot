@@ -54,6 +54,8 @@ import org.w3c.dom.NodeList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static fi.iki.mtr.util.StringUtils.isEmpty;
+
 /**
  * Mapper mapping data between JSON, objects, and database tables.
  */
@@ -334,12 +336,12 @@ public class Mapper {
                     break;
 
                 case CHAR:
-                    fi.field.setChar(object, (char) rs.getInt(i));
+                    fi.field.setChar(object, rs.getString(i).charAt(0));
                     break;
 
                 case CHARACTER:
                     fi.field.set(object,
-                                 Character.valueOf((char) rs.getInt(i)));
+                                 Character.valueOf(rs.getString(i).charAt(0)));
                     break;
 
                 case STRING:
@@ -563,6 +565,21 @@ public class Mapper {
      * @throws MapperException if the conversion fails.
      */
     public static String toUpdateSql(Class<?> cls) throws MapperException {
+        return toUpdateSql(cls, null);
+    }
+
+    /**
+     * Converts the object to SQL update statement.
+     *
+     * @param cls the class of the object to convert
+     * @param constraints optional additional constraints for the
+     * objects to update.
+     * @return the SQL update statement of the object.
+     * @throws MapperException if the conversion fails.
+     */
+    public static String toUpdateSql(Class<?> cls, String constraints)
+        throws MapperException {
+
         ClassInfo info = getClassInfo(cls);
         StringBuilder sb = new StringBuilder();
 
@@ -599,6 +616,11 @@ public class Mapper {
         sb.append(" WHERE ");
         sb.append(idField.dbName);
         sb.append("=?");
+
+        if (!isEmpty(constraints)) {
+            sb.append(" AND ");
+            sb.append(constraints);
+        }
 
         return sb.toString();
     }
@@ -662,6 +684,25 @@ public class Mapper {
      */
     public static Object[] toSqlParams(Object object, boolean appendId)
         throws MapperException {
+        return toSqlParams(object, false, null);
+    }
+
+    /**
+     * Converts the object to SQL insert and update statement
+     * parameters.
+     *
+     * @param object the object to convert
+     * @param appendId specifies if the object ID field is appended to
+     * the paramters array.
+     * @param tailParams optional extra params to be appended to the
+     * parameter list.
+     * @return the SQL update statement parameters.
+     * @throws MapperException if the conversion fails.
+     */
+    public static Object[] toSqlParams(Object object, boolean appendId,
+                                       Object[] tailParams)
+        throws MapperException {
+
         ClassInfo info = getClassInfo(object.getClass());
         ArrayList<Object> params = new ArrayList<>();
 
@@ -685,6 +726,12 @@ public class Mapper {
                                               + object.getClass());
                 }
                 params.add(idField.field.get(object));
+            }
+
+            if (tailParams != null) {
+                for (Object p : tailParams) {
+                    params.add(p);
+                }
             }
 
             return params.toArray(new Object[params.size()]);

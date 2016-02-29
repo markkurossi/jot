@@ -46,7 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class AbstractDAO {
-    private static Logger log = LoggerFactory.getLogger(AbstractDAO.class);
+    protected static Logger log = LoggerFactory.getLogger(AbstractDAO.class);
     private ConnectionManager connectionManager;
 
     protected AbstractDAO(ConnectionManager connectionManager) {
@@ -55,6 +55,7 @@ public abstract class AbstractDAO {
 
     protected class Executor<T> {
         private Class<?> cls;
+        private boolean debug;
 
         /**
          * An optional connection instance to be used for operations.
@@ -68,6 +69,10 @@ public abstract class AbstractDAO {
 
         public Executor(Class<?> cls) {
             this.cls = cls;
+        }
+
+        public void setDebug(boolean debug) {
+            this.debug = debug;
         }
 
         private CachedConnection getConnection() throws SQLException {
@@ -97,6 +102,10 @@ public abstract class AbstractDAO {
                     for (int i = 0; i < params.length; i++) {
                         stmt.setObject(i + 1, params[i]);
                     }
+                }
+
+                if (debug) {
+                    log.debug("query={}, params={}", query, params);
                 }
 
                 ArrayList<T> result = new ArrayList<>();
@@ -170,7 +179,6 @@ public abstract class AbstractDAO {
             try {
                 conn = getConnection();
                 String sql = Mapper.toInsertSql(cls);
-                System.err.println("SQL: " + sql);
                 PreparedStatement stmt
                     = conn.prepareStatement(Mapper.toInsertSql(cls));
 
@@ -198,9 +206,15 @@ public abstract class AbstractDAO {
         }
 
         public void update(T obj) throws IOException {
+            update(obj, null, null);
+        }
+
+        public void update(T obj, String where, Object[] params)
+            throws IOException {
             try {
-                int count = executeUpdate(Mapper.toUpdateSql(cls),
-                                          Mapper.toSqlParams(obj, true));
+                int count = executeUpdate(Mapper.toUpdateSql(cls, where),
+                                          Mapper.toSqlParams(obj, true,
+                                                             params));
                 if (count != 1) {
                     throw new IOException("Unexpected update count: " + count);
                 }
@@ -234,6 +248,10 @@ public abstract class AbstractDAO {
 
                 for (int i = 0; i < params.length; i++) {
                     stmt.setObject(i + 1, params[i]);
+                }
+
+                if (debug) {
+                    log.debug("query={}, params={}", query, params);
                 }
 
                 return stmt.executeUpdate();
