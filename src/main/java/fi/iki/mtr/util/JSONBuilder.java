@@ -35,6 +35,8 @@
 
 package fi.iki.mtr.util;
 
+import java.util.List;
+
 public class JSONBuilder {
 
     /**
@@ -59,20 +61,36 @@ public class JSONBuilder {
                     throw new IllegalArgumentException("Out of arguments: "
                                                        + argPos);
                 }
-                Object arg = args.get(argPos++);
-                if (arg instanceof String) {
-                    sb.append("\"");
-                    escapeString((String) arg, sb);
-                    sb.append("\"");
-                } else {
-                    sb.append(String.valueOf(arg));
-                }
+                appendValue(args.get(argPos++), sb);
             } else {
                 sb.append(ch);
             }
         }
 
         return sb.toString();
+    }
+
+    private static void appendValue(Object value, StringBuilder sb) {
+        if (value instanceof List) {
+            boolean first = true;
+            sb.append('[');
+            for (Object v : (List) value) {
+                if (first) {
+                    first = false;
+                } else {
+                    sb.append(',');
+                }
+                appendValue(v, sb);
+            }
+            sb.append(']');
+        } else if (value instanceof String) {
+            sb.append("\"");
+            escapeString((String) value, sb);
+            sb.append("\"");
+        } else {
+            sb.append(String.valueOf(value));
+        }
+
     }
 
     public static void escapeString(String str, StringBuilder sb) {

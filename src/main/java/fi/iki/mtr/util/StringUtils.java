@@ -44,9 +44,16 @@ public class StringUtils {
     };
 
     public static String hexEncode(byte[] data) {
+        return hexEncode(data, "");
+    }
+
+    public static String hexEncode(byte[] data, String byteSeparator) {
         StringBuilder sb = new StringBuilder();
 
         for (byte b : data) {
+            if (sb.length() > 0) {
+                sb.append(byteSeparator);
+            }
             sb.append(ALPHABET[(b >> 4) & 0xf]);
             sb.append(ALPHABET[b & 0xf]);
         }
@@ -82,7 +89,7 @@ public class StringUtils {
                 } else {
                     sb.append("   ");
                 }
-                if (i + j + 1< len) {
+                if (i + j + 1 < len) {
                     sb.append(String.format("%02x", b[ofs + i + j + 1]));
                     toPrintable(ascii, b[ofs + i + j + 1]);
                 } else {

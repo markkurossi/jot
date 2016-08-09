@@ -2,7 +2,7 @@
 
   Buffer.java
 
-  Copyright (c) 2015, Markku Rossi
+  Copyright (c) 2015-2016, Markku Rossi
   All rights reserved.
 
   BSD 2-Clause License:
@@ -59,11 +59,20 @@ public class Buffer {
     public void consume(int amount) {
         if (dataInBuf < amount) {
             throw new IllegalArgumentException(
-                                 	String.format("dataInBuf=%d, amount=%d",
+                                 	String.format("length=%d, amount=%d",
                                                       dataInBuf, amount));
         }
 
         System.arraycopy(buf, amount, buf, 0, dataInBuf - amount);
+        dataInBuf -= amount;
+    }
+
+    public void consumeEnd(int amount) {
+        if (dataInBuf < amount) {
+            throw new IllegalArgumentException(
+                                     	String.format("length=%d, amount=%d",
+                                                      dataInBuf, amount));
+        }
         dataInBuf -= amount;
     }
 
